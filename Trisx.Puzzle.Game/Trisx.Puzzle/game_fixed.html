@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>ปริศนาเชื่อมต่อท่อ</title>
+  <style>
+    :root{
+      --bg1:#071b2e; --bg2:#0b3b5a;
+      --accent:#06b6d4; /* cyan */
+      --accent2:#ff7ab6; /* pink */
+      --tile1:#7c3aed; --tile2:#06b6d4; /* violet -> cyan */
+      --text:#f8fafc; --muted:#cfeff6;
+    }
+    *{box-sizing:border-box}
+  body{font-family:Segoe UI, Roboto, Arial;margin:0;min-height:100vh;background:linear-gradient(180deg,var(--bg1),var(--bg2));color:var(--text);display:flex;align-items:center;justify-content:center;padding:20px}
+  .container{width:920px;max-width:100%;background:linear-gradient(135deg,rgba(255,255,255,0.03),rgba(0,0,0,0.08));box-shadow:0 8px 30px rgba(2,6,23,0.6);border-radius:12px;padding:18px;display:grid;grid-template-columns:300px 1fr;gap:16px}
+    header{grid-column:1/-1;display:flex;align-items:center;justify-content:space-between}
+    h1{font-size:20px;margin:0}
+    .controls{display:flex;gap:8px;align-items:center}
+    button,select{background:transparent;border:1px solid rgba(255,255,255,0.06);color:var(--text);padding:8px 10px;border-radius:8px;cursor:pointer}
+    button.primary{background:var(--accent);color:#042027;border:none}
+    .sidebar{padding:8px;background:rgba(255,255,255,0.02);border-radius:8px}
+    .board-wrap{display:flex;flex-direction:column;gap:12px;align-items:center;justify-content:center}
+  .board{background:linear-gradient(180deg,rgba(255,255,255,0.02),rgba(0,0,0,0.06));padding:12px;border-radius:10px;display:grid;gap:6px}
+  .tile{background:linear-gradient(180deg,var(--tile1),var(--tile2));display:flex;align-items:center;justify-content:center;color:var(--text);border-radius:12px;user-select:none;cursor:pointer;transition:transform .18s;box-shadow:0 6px 18px rgba(2,6,23,0.45)}
+    .tile svg{width:100%;height:100%}
+    .meta{display:flex;flex-direction:column;gap:8px}
+    .status{display:flex;gap:10px;align-items:center}
+  .small{font-size:13px;color:var(--muted)}
+  button.primary{background:linear-gradient(90deg,var(--accent),var(--accent2));color:#042027;border:none}
+    .footer{grid-column:1/-1;text-align:center;font-size:13px;color:var(--muted);margin-top:6px}
+    .instructions{font-size:13px;color:var(--muted);margin-top:8px}
+    @media(max-width:840px){.container{grid-template-columns:1fr}header{flex-direction:column;align-items:flex-start;gap:8px}}
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+  <h1>ปริศนาเชื่อมต่อท่อ</h1>
+      <div class="controls">
+        <div class="small">ระดับ:</div>
+        <select id="difficulty">
+          <option value="3">ง่าย (3×3)</option>
+          <option value="4" selected>ปานกลาง (4×4)</option>
+          <option value="5">ยาก (5×5)</option>
+        </select>
+        <button id="shuffleBtn" class="primary">สร้างใหม่ / สุ่ม</button>
+        <button id="solveBtn">โชว์คำตอบ</button>
+      </div>
+    </header>
+
+    <aside class="sidebar">
+      <div class="meta">
+        <div class="status"><strong>เวลา:</strong> <span id="timer">00:00</span></div>
+        <div class="status"><strong>จำนวนการหมุน:</strong> <span id="moves">0</span></div>
+        <div class="status"><strong>สถานะ:</strong> <span id="message" class="small">พร้อม</span></div>
+        <hr />
+        <div class="small">วิธีเล่น:</div>
+        <div class="instructions">คลิกเพื่อหมุนทิศทางของท่อให้เชื่อมต่อกันทั้งหมด</div>
+      </div>
+    </aside>
+
+    <main class="board-wrap">
+      <div id="board" class="board" role="application" aria-label="Puzzle board"></div>
+      <div style="display:flex;gap:8px"><button id="hintBtn">ช่วยเหลือ</button><button id="resetBtn">รีเซ็ต</button></div>
+    </main>
+
+  <div class="footer">ออกแบบโดย SnoxkeR — ปริศนาเชื่อมต่อท่อ</div>
+  </div>
+
+  <script>
+    (function(){
+      // Rotate & Connect — verbose UI
+      const boardEl = document.getElementById('board');
+      const difficultyEl = document.getElementById('difficulty');
+      const shuffleBtn = document.getElementById('shuffleBtn');
+      const solveBtn = document.getElementById('solveBtn');
+      const hintBtn = document.getElementById('hintBtn');
+      const resetBtn = document.getElementById('resetBtn');
+      const timerEl = document.getElementById('timer');
+      const movesEl = document.getElementById('moves');
+      const messageEl = document.getElementById('message');
+
+      let size = Number(difficultyEl.value);
+      let tiles = [];
+      let solvedTiles = [];
+      let moves = 0;
+      let timer = null, startTime = null, elapsedBefore = 0;
+
+      function idx(r,c){ return r*size + c; }
+      function inside(r,c){ return r>=0 && c>=0 && r<size && c<size; }
+      const dr = [-1,0,1,0];
+      const dc = [0,1,0,-1];
+
+      function formatTime(ms){ const s = Math.floor(ms/1000); const mm = String(Math.floor(s/60)).padStart(2,'0'); const ss = String(s%60).padStart(2,'0'); return mm+':'+ss; }
+      function startTimer(){ if(timer) return; startTime = Date.now(); timer = setInterval(()=>{ timerEl.textContent = formatTime(Date.now() - startTime + elapsedBefore); }, 250); }
+      function stopTimer(){ if(!timer) return; clearInterval(timer); timer=null; elapsedBefore += Date.now()-startTime; }
+      function resetTimer(){ clearInterval(timer); timer=null; startTime=null; elapsedBefore=0; timerEl.textContent='00:00'; }
+
+      function buildConnectedGraph(extra=0){
+        const n=size*size; const visited=new Array(n).fill(false); const edges={}; for(let i=0;i<n;i++) edges[i]=new Set();
+        const stack=[0]; visited[0]=true;
+        while(stack.length){ const v=stack[stack.length-1]; const r=Math.floor(v/size), c=v%size; const neigh=[];
+          for(let d=0;d<4;d++){ const nr=r+dr[d], nc=c+dc[d]; if(inside(nr,nc)){ const id=idx(nr,nc); if(!visited[id]) neigh.push(id); }}
+          if(neigh.length===0){ stack.pop(); continue; }
+          const to=neigh[Math.floor(Math.random()*neigh.length)]; edges[v].add(to); edges[to].add(v); visited[to]=true; stack.push(to);
+        }
+        const cand=[]; for(let r=0;r<size;r++) for(let c=0;c<size;c++){ const a=idx(r,c); for(let d=0;d<4;d++){ const nr=r+dr[d], nc=c+dc[d]; if(inside(nr,nc)){ const b=idx(nr,nc); if(!edges[a].has(b)) cand.push([a,b]); }}}
+        for(let i=0;i<extra && cand.length;i++){ const j=Math.floor(Math.random()*cand.length); const [a,b]=cand.splice(j,1)[0]; edges[a].add(b); edges[b].add(a); }
+        return edges;
+      }
+
+      function edgesToTileConnections(edges){ const n=size*size; const out=new Array(n); for(let r=0;r<size;r++) for(let c=0;c<size;c++){ const id=idx(r,c); const con=[false,false,false,false]; for(let d=0;d<4;d++){ const nr=r+dr[d], nc=c+dc[d]; if(inside(nr,nc)){ const nid=idx(nr,nc); if(edges[id].has(nid)) con[d]=true; }} out[id]=con; } return out; }
+
+      function rotateArray(arr,rot){ const n=arr.length; const res=new Array(n); for(let i=0;i<n;i++) res[(i+rot)%n]=arr[i]; return res; }
+
+      function generate(sz){ size = sz||Number(difficultyEl.value); const extra = Math.max(0,Math.floor(size/1.5)); const graph=buildConnectedGraph(extra); const base=edgesToTileConnections(graph);
+        solvedTiles = base.map(b=>({base:b.slice(),rot:0})); tiles = solvedTiles.map(t=>({base:t.base.slice(), rot:Math.floor(Math.random()*4)})); if(isSolved()){ const k=Math.floor(Math.random()*tiles.length); tiles[k].rot=(tiles[k].rot+1)%4; }
+        moves = 0; if(movesEl) movesEl.textContent = String(moves); resetTimer(); startTimer(); if(messageEl) messageEl.textContent='กำลังเล่น'; render(); }
+
+      function drawTileSVG(base,rot){
+        const con=rotateArray(base,rot);
+        const ns='http://www.w3.org/2000/svg';
+        const svg=document.createElementNS(ns,'svg'); svg.setAttribute('viewBox','0 0 100 100');
+        const center=document.createElementNS(ns,'circle'); center.setAttribute('cx','50'); center.setAttribute('cy','50'); center.setAttribute('r','10');
+        // use computed style for dynamic colors
+        const cs = getComputedStyle(document.documentElement);
+        const fill = cs.getPropertyValue('--accent2') || '#0ccbd6';
+        const stroke = cs.getPropertyValue('--accent') || '#77f0f6';
+        center.setAttribute('fill', fill.trim()); svg.appendChild(center);
+        function branch(x1,y1,x2,y2){ const p=document.createElementNS(ns,'path'); p.setAttribute('d',`M ${x1} ${y1} L ${x2} ${y2}`); p.setAttribute('stroke',stroke.trim()); p.setAttribute('stroke-width','14'); p.setAttribute('stroke-linecap','round'); svg.appendChild(p); }
+        if(con[0]) branch(50,30,50,8); if(con[1]) branch(70,50,92,50); if(con[2]) branch(50,70,50,92); if(con[3]) branch(30,50,8,50);
+        return svg;
+      }
+
+      function render(){ boardEl.innerHTML=''; boardEl.style.gridTemplateColumns = `repeat(${size}, 1fr)`; const max=Math.min(660,size*120); boardEl.style.width=max+'px'; boardEl.style.height=max+'px'; const tileSize=Math.floor(max/size)-6; tiles.forEach((t,id)=>{ const div=document.createElement('div'); div.className='tile'; div.style.width=tileSize+'px'; div.style.height=tileSize+'px'; div.dataset.id=id; div.appendChild(drawTileSVG(t.base,t.rot)); div.addEventListener('click',()=>{ rotateTile(id); }); boardEl.appendChild(div); }); }
+
+      function rotateTile(id,amount=1){ tiles[id].rot=(tiles[id].rot+amount)%4; moves++; if(movesEl) movesEl.textContent=String(moves); render(); if(isSolved()){ stopTimer(); if(messageEl) messageEl.textContent='สำเร็จ!'; } }
+
+      function isSolved(){ for(let r=0;r<size;r++) for(let c=0;c<size;c++){ const id=idx(r,c); const t=tiles[id]; const con=rotateArray(t.base,t.rot); for(let d=0;d<4;d++){ const nr=r+dr[d], nc=c+dc[d]; if(!inside(nr,nc)){ if(con[d]) return false; continue; } const nid=idx(nr,nc); const nt=tiles[nid]; const ncon=rotateArray(nt.base,nt.rot); const opp=(d+2)%4; if(con[d] !== ncon[opp]) return false; } } return true; }
+
+      function arraysEqual(a,b){ if(a.length!==b.length) return false; for(let i=0;i<a.length;i++) if(a[i]!==b[i]) return false; return true; }
+
+      hintBtn.addEventListener('click', ()=>{ const wrong=[]; for(let i=0;i<tiles.length;i++){ if(!arraysEqual(rotateArray(tiles[i].base,tiles[i].rot), rotateArray(solvedTiles[i].base,solvedTiles[i].rot))) wrong.push(i); } if(!wrong.length) return; const id=wrong[Math.floor(Math.random()*wrong.length)]; const orig=tiles[id].rot; tiles[id].rot=solvedTiles[id].rot; render(); setTimeout(()=>{ tiles[id].rot=orig; render(); },900); });
+      resetBtn.addEventListener('click', ()=>{ generate(size); });
+      shuffleBtn.addEventListener('click', ()=>{ generate(Number(difficultyEl.value)); });
+      solveBtn.addEventListener('click', ()=>{ tiles=solvedTiles.map(t=>({base:t.base.slice(),rot:t.rot})); render(); stopTimer(); if(messageEl) messageEl.textContent='คำตอบ'; });
+      difficultyEl.addEventListener('change', ()=>{ generate(Number(difficultyEl.value)); });
+
+      // init
+      generate(size);
+    })();
+  </script>
+</body>
+</html>
